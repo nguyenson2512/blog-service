@@ -48,6 +48,7 @@ func (e *Elastic) EnsurePostsIndex(ctx context.Context) error {
 			"properties": map[string]interface{}{
 				"title":   map[string]string{"type": "text"},
 				"content": map[string]string{"type": "text"},
+				"tags":    map[string]string{"type": "keyword"},
 			},
 		},
 	}
@@ -92,4 +93,64 @@ func (e *Elastic) SearchPosts(ctx context.Context, query string) ([]map[string]i
 		results = append(results, src)
 	}
 	return results, nil
-} 
+}
+
+func (e *Elastic) FindRelatedPosts(ctx context.Context, postID uint, tags []string, limit int) ([]map[string]interface{}, error) {
+	if len(tags) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+
+	// Build should clauses for each tag
+	var shouldClauses []map[string]interface{}
+	for _, tag := range tags {
+		shouldClauses = append(shouldClauses, map[string]interface{}{
+			"term": map[string]interface{}{
+				"tags": tag,
+			},
+		})
+	}
+
+	body := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": shouldClauses,
+				"must_not": map[string]interface{}{
+					"term": map[string]interface{}{
+						"id": postID,
+					},
+				},
+				"minimum_should_match": 1,
+			},
+		},
+		"size": limit,
+	}
+
+	b, _ := json.Marshal(body)
+	res, err := e.Client.Search(
+		e.Client.Search.WithContext(ctx),
+		e.Client.Search.WithIndex(e.Index),
+		e.Client.Search.WithBody(strings.NewReader(string(b))),
+		e.Client.Search.WithTrackTotalHits(true),
+		e.Client.Search.WithTimeout(10*time.Second),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return nil, fmt.Errorf("related posts search error: %s", res.String())
+	}
+
+	var parsed map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&parsed); err != nil {
+		return nil, err
+	}
+
+	var results []map[string]interface{}
+	hits := parsed["hits"].(map[string]interface{})["hits"].([]interface{})
+	for _, h := range hits {
+		src := h.(map[string]interface{})["_source"].(map[string]interface{})
+		results = append(results, src)
+	}
+	return results, nil
+}

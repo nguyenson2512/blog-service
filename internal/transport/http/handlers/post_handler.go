@@ -52,12 +52,25 @@ func (h *PostHandler) GetPost(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	post, err := h.service.GetPost(c.Request.Context(), uint(id))
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
+	
+	// Check if related posts are requested
+	includeRelated := c.Query("include_related") == "true"
+	
+	if includeRelated {
+		postWithRelated, err := h.service.GetPostWithRelated(c.Request.Context(), uint(id))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, postWithRelated)
+	} else {
+		post, err := h.service.GetPost(c.Request.Context(), uint(id))
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, post)
 	}
-	c.JSON(http.StatusOK, post)
 }
 
 func (h *PostHandler) UpdatePost(c *gin.Context) {
@@ -105,4 +118,4 @@ func (h *PostHandler) Search(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, res)
-} 
+}

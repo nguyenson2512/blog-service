@@ -1,4 +1,4 @@
- # Blog Service
+# Blog Service
 
 High-performance blog API in Go using Gin, GORM (PostgreSQL), Redis (cache-aside), and Elasticsearch (full-text search). Hot reloaded with Air. Orchestrated via Docker Compose.
 
@@ -48,8 +48,9 @@ The app reads environment variables from `.env` (see `.env.example`). Key values
 
 ## Elasticsearch
 - Index: `posts`
-- On create/update, the document `{id,title,content}` is indexed (refresh=true).
+- On create/update, the document `{id,title,content,tags}` is indexed (refresh=true).
 - Search uses `multi_match` across `title` and `content`.
+- Related posts use `bool` query with `should` clauses for tag matching.
 
 ## API Reference and Sample Requests
 Use `jq` for pretty-printing where shown.
@@ -83,6 +84,37 @@ GET `/posts/:id`
 curl -sS http://localhost:8080/posts/1 | jq
 ```
 
+### Get a post with related posts (based on shared tags)
+GET `/posts/:id?include_related=true`
+```bash
+curl -sS 'http://localhost:8080/posts/1?include_related=true' | jq
+```
+Response includes up to 5 related posts that share similar tags:
+```json
+{
+  "id": 1,
+  "title": "Hello World",
+  "content": "This is my first post.",
+  "tags": ["golang", "news"],
+  "created_at": "...",
+  "updated_at": "...",
+  "related_posts": [
+    {
+      "id": 3,
+      "title": "Go Performance Tips",
+      "content": "Some performance tips...",
+      "tags": ["golang", "performance"]
+    },
+    {
+      "id": 5,
+      "title": "Latest Tech News",
+      "content": "Breaking news...",
+      "tags": ["news", "tech"]
+    }
+  ]
+}
+```
+
 ### Update a post (invalidates Redis, re-indexes ES)
 PUT `/posts/:id`
 ```bash
@@ -105,6 +137,34 @@ curl -sS 'http://localhost:8080/posts/search-by-tag?tag=golang' | jq
 GET `/posts/search?q=<query>`
 ```bash
 curl -sS 'http://localhost:8080/posts/search?q=hello' | jq
+```
+
+## Related Posts Feature
+The related posts feature uses Elasticsearch to find posts with similar tags:
+
+- **Algorithm**: Uses a `bool` query with `should` clauses for each tag
+- **Exclusion**: Excludes the current post using `must_not` clause
+- **Limit**: Returns up to 5 related posts
+- **Fallback**: If no related posts found or ES error, returns empty array
+- **Usage**: Add `?include_related=true` to GET `/posts/:id`
+
+The Elasticsearch query structure:
+```json
+{
+  "query": {
+    "bool": {
+      "should": [
+        {"term": {"tags": "golang"}},
+        {"term": {"tags": "news"}}
+      ],
+      "must_not": [
+        {"term": {"id": 1}}
+      ],
+      "minimum_should_match": 1
+    }
+  },
+  "size": 5
+}
 ```
 
 ## Development Workflow

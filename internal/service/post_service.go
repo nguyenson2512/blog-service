@@ -42,6 +42,11 @@ type UpdatePostInput struct {
 	Tags    []string `json:"tags"`
 }
 
+type PostWithRelated struct {
+	*models.Post
+	RelatedPosts []map[string]interface{} `json:"related_posts"`
+}
+
 func (s *PostService) CreatePost(ctx context.Context, in CreatePostInput) (*models.Post, error) {
 	post := &models.Post{Title: in.Title, Content: in.Content, Tags: pq.StringArray(in.Tags)}
 	var created *models.Post
@@ -52,7 +57,12 @@ func (s *PostService) CreatePost(ctx context.Context, in CreatePostInput) (*mode
 		return nil
 	})
 	if err != nil { return nil, err }
-	_ = s.es.IndexPost(ctx, created.ID, map[string]interface{}{ "id": created.ID, "title": created.Title, "content": created.Content })
+	_ = s.es.IndexPost(ctx, created.ID, map[string]interface{}{ 
+		"id": created.ID, 
+		"title": created.Title, 
+		"content": created.Content,
+		"tags": created.Tags,
+	})
 	return created, nil
 }
 
@@ -68,11 +78,35 @@ func (s *PostService) GetPost(ctx context.Context, id uint) (*models.Post, error
 	return p, nil
 }
 
+func (s *PostService) GetPostWithRelated(ctx context.Context, id uint) (*PostWithRelated, error) {
+	post, err := s.GetPost(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get related posts from Elasticsearch
+	relatedPosts, err := s.es.FindRelatedPosts(ctx, id, post.Tags, 5)
+	if err != nil {
+		// Log error but don't fail the request
+		relatedPosts = []map[string]interface{}{}
+	}
+
+	return &PostWithRelated{
+		Post:         post,
+		RelatedPosts: relatedPosts,
+	}, nil
+}
+
 func (s *PostService) UpdatePost(ctx context.Context, id uint, in UpdatePostInput) (*models.Post, error) {
 	post := &models.Post{ID: id, Title: in.Title, Content: in.Content, Tags: pq.StringArray(in.Tags)}
 	if err := s.repo.Update(ctx, post); err != nil { return nil, err }
 	_ = s.cache.Del(ctx, fmt.Sprintf("post:%d", id))
-	_ = s.es.IndexPost(ctx, id, map[string]interface{}{ "id": id, "title": post.Title, "content": post.Content })
+	_ = s.es.IndexPost(ctx, id, map[string]interface{}{ 
+		"id": id, 
+		"title": post.Title, 
+		"content": post.Content,
+		"tags": post.Tags,
+	})
 	return s.repo.GetByID(ctx, id)
 }
 
@@ -82,4 +116,4 @@ func (s *PostService) SearchByTag(ctx context.Context, tag string) ([]models.Pos
 
 func (s *PostService) SearchES(ctx context.Context, q string) ([]map[string]interface{}, error) {
 	return s.es.SearchPosts(ctx, q)
-} 
+}
