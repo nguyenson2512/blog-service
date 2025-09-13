@@ -1,0 +1,45 @@
+# Binaries
+/tmp/
+/tmp/*
+tmp/
+tmp/*
+
+# Build output
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.o
+
+# Dependency directories
+vendor/
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Environment files
+.env
+
+# Air hot reload
+air_tmp/
+tmp/
+
+# Docker
+*.pid
+*.sock
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# PostgreSQL/Redis/Elasticsearch volumes (if mapped locally)
+pgdata/
